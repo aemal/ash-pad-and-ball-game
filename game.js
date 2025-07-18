@@ -15,7 +15,7 @@ class MatrixBreakout {
             y: this.height - 40,
             width: 120,
             height: 15,
-            speed: 15,
+            speed: 20,
             dx: 0
         };
         
@@ -38,8 +38,20 @@ class MatrixBreakout {
         this.keys = {};
         this.sounds = {};
         this.speedMultiplier = 1;
-        this.basePaddleSpeed = 15;
+        this.basePaddleSpeed = 20;
         this.baseBallSpeed = 4;
+        
+        this.poseTracking = {
+            enabled: false,
+            pose: null,
+            camera: null,
+            bodyPosition: null,
+            smoothingFactor: 0.2,
+            landmarksCanvas: null,
+            landmarksCtx: null,
+            lastPoseDetected: Date.now(),
+            poseLostBuzzPlayed: false
+        };
         
         this.init();
     }
@@ -50,6 +62,7 @@ class MatrixBreakout {
         this.createBricks();
         this.bindEvents();
         this.initSounds();
+        this.initPoseTracking();
         this.gameLoop();
     }
     
@@ -155,8 +168,200 @@ class MatrixBreakout {
             paddle: this.createSound(200, 0.1, 'square'),
             brick: this.createSound(400, 0.15, 'sawtooth'),
             powerUp: this.createSound(600, 0.2, 'sine'),
-            gameOver: this.createSound(150, 0.5, 'triangle')
+            gameOver: this.createSound(150, 0.5, 'triangle'),
+            buzz: this.createSound(100, 0.3, 'square')
         };
+    }
+    
+    async initPoseTracking() {
+        try {
+            const videoElement = document.getElementById('webcam');
+            const cameraDisplay = document.getElementById('camera-display');
+            
+            // Initialize landmarks canvas
+            this.poseTracking.landmarksCanvas = document.getElementById('landmarks-canvas');
+            this.poseTracking.landmarksCtx = this.poseTracking.landmarksCanvas.getContext('2d');
+            
+            this.poseTracking.pose = new Pose({
+                locateFile: (file) => {
+                    return `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`;
+                }
+            });
+            
+            this.poseTracking.pose.setOptions({
+                modelComplexity: 1,
+                smoothLandmarks: true,
+                enableSegmentation: false,
+                smoothSegmentation: false,
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5
+            });
+            
+            this.poseTracking.pose.onResults((results) => {
+                this.onPoseResults(results);
+            });
+            
+            this.poseTracking.camera = new Camera(videoElement, {
+                onFrame: async () => {
+                    await this.poseTracking.pose.send({image: videoElement});
+                },
+                width: 640,
+                height: 480
+            });
+            
+            await this.poseTracking.camera.start();
+            this.poseTracking.enabled = true;
+            
+            // Stream webcam to camera preview
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                cameraDisplay.srcObject = stream;
+            }
+            
+        } catch (error) {
+            console.log('Pose tracking initialization failed:', error);
+        }
+    }
+    
+    onPoseResults(results) {
+        // Clear the landmarks canvas
+        if (this.poseTracking.landmarksCtx) {
+            this.poseTracking.landmarksCtx.clearRect(0, 0, this.poseTracking.landmarksCanvas.width, this.poseTracking.landmarksCanvas.height);
+        }
+        
+        if (results.poseLandmarks && results.poseLandmarks.length > 0) {
+            const landmarks = results.poseLandmarks;
+            
+            // Pose is detected, update tracking
+            this.poseTracking.lastPoseDetected = Date.now();
+            this.poseTracking.poseLostBuzzPlayed = false;
+            
+            // Calculate body center using shoulders for better stability
+            const bodyCenter = this.calculateBodyCenter(landmarks);
+            const normalizedX = bodyCenter.x;
+            const gameX = normalizedX * this.width;
+            
+            if (this.poseTracking.bodyPosition === null) {
+                this.poseTracking.bodyPosition = gameX;
+            } else {
+                this.poseTracking.bodyPosition = this.poseTracking.bodyPosition * (1 - this.poseTracking.smoothingFactor) + 
+                    gameX * this.poseTracking.smoothingFactor;
+            }
+            
+            // Check for arms up gesture for game restart
+            if (this.gameState === 'gameOver') {
+                const isArmsUp = this.detectArmsUp(landmarks);
+                if (isArmsUp) {
+                    this.restartGame();
+                }
+            }
+            
+            // Draw pose landmarks
+            this.drawPoseLandmarks(landmarks);
+        } else {
+            // No pose detected
+            if (this.poseTracking.enabled && !this.poseTracking.poseLostBuzzPlayed) {
+                const timeSinceLastDetected = Date.now() - this.poseTracking.lastPoseDetected;
+                if (timeSinceLastDetected > 1000) { // 1 second delay
+                    this.sounds.buzz();
+                    this.poseTracking.poseLostBuzzPlayed = true;
+                }
+            }
+        }
+    }
+    
+    calculateBodyCenter(landmarks) {
+        // Use shoulders and hips to calculate body center for stable tracking
+        const leftShoulder = landmarks[11];  // Left shoulder
+        const rightShoulder = landmarks[12]; // Right shoulder
+        const leftHip = landmarks[23];       // Left hip
+        const rightHip = landmarks[24];      // Right hip
+        
+        // Calculate center between shoulders and hips
+        const shoulderCenterX = (leftShoulder.x + rightShoulder.x) / 2;
+        const hipCenterX = (leftHip.x + rightHip.x) / 2;
+        
+        // Use upper body center (shoulders) for paddle control
+        return {
+            x: shoulderCenterX,
+            y: (leftShoulder.y + rightShoulder.y) / 2
+        };
+    }
+    
+    detectArmsUp(landmarks) {
+        // Check if both arms are raised up (wrists above shoulders)
+        const leftWrist = landmarks[15];     // Left wrist
+        const rightWrist = landmarks[16];    // Right wrist
+        const leftShoulder = landmarks[11];  // Left shoulder
+        const rightShoulder = landmarks[12]; // Right shoulder
+        
+        // Check if wrists are above shoulders
+        const leftArmUp = leftWrist.y < leftShoulder.y - 0.1;
+        const rightArmUp = rightWrist.y < rightShoulder.y - 0.1;
+        
+        return leftArmUp && rightArmUp;
+    }
+    
+    drawPoseLandmarks(landmarks) {
+        if (!this.poseTracking.landmarksCtx) return;
+        
+        const ctx = this.poseTracking.landmarksCtx;
+        const canvasWidth = this.poseTracking.landmarksCanvas.width;
+        const canvasHeight = this.poseTracking.landmarksCanvas.height;
+        
+        // Pose connections (MediaPipe pose model)
+        const connections = [
+            // Upper body
+            [11, 12], [11, 13], [12, 14], [13, 15], [14, 16], // Shoulders and arms
+            [11, 23], [12, 24], [23, 24], // Torso
+            // Lower body
+            [23, 25], [24, 26], [25, 27], [26, 28], // Hips and legs
+            [27, 29], [28, 30], [29, 31], [30, 32], // Knees and ankles
+            // Face (optional)
+            [0, 1], [1, 2], [2, 3], [3, 7], [0, 4], [4, 5], [5, 6], [6, 8]
+        ];
+        
+        // Draw connections
+        ctx.strokeStyle = '#00ff00';
+        ctx.lineWidth = 3;
+        ctx.globalAlpha = 0.8;
+        
+        connections.forEach(([start, end]) => {
+            if (landmarks[start] && landmarks[end]) {
+                const startPoint = landmarks[start];
+                const endPoint = landmarks[end];
+                
+                const startX = startPoint.x * canvasWidth;
+                const startY = startPoint.y * canvasHeight;
+                const endX = endPoint.x * canvasWidth;
+                const endY = endPoint.y * canvasHeight;
+                
+                ctx.beginPath();
+                ctx.moveTo(startX, startY);
+                ctx.lineTo(endX, endY);
+                ctx.stroke();
+            }
+        });
+        
+        // Draw landmarks
+        ctx.fillStyle = '#00ff00';
+        ctx.globalAlpha = 1;
+        
+        landmarks.forEach((landmark, index) => {
+            const x = landmark.x * canvasWidth;
+            const y = landmark.y * canvasHeight;
+            
+            ctx.beginPath();
+            ctx.arc(x, y, 5, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            // Add a white center dot
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(x, y, 2, 0, 2 * Math.PI);
+            ctx.fill();
+            ctx.fillStyle = '#00ff00';
+        });
     }
     
     createSound(frequency, duration, type = 'sine') {
@@ -218,6 +423,11 @@ class MatrixBreakout {
         document.getElementById('score-value').textContent = this.score;
         document.getElementById('level-value').textContent = this.level;
         document.getElementById('lives-value').textContent = this.lives;
+        
+        // Update overlay HUD
+        document.getElementById('score-value-overlay').textContent = this.score;
+        document.getElementById('level-value-overlay').textContent = this.level;
+        document.getElementById('lives-value-overlay').textContent = this.lives;
     }
     
     update() {
@@ -235,18 +445,24 @@ class MatrixBreakout {
     updatePaddle() {
         this.paddle.dx = 0;
         
-        if (this.keys['ArrowLeft'] || this.keys['a'] || this.keys['A']) {
-            this.paddle.dx = -this.paddle.speed;
-        }
-        if (this.keys['ArrowRight'] || this.keys['d'] || this.keys['D']) {
-            this.paddle.dx = this.paddle.speed;
-        }
-        
-        this.paddle.x += this.paddle.dx;
-        
-        if (this.paddle.x < 0) this.paddle.x = 0;
-        if (this.paddle.x + this.paddle.width > this.width) {
-            this.paddle.x = this.width - this.paddle.width;
+        if (this.poseTracking.enabled && this.poseTracking.bodyPosition !== null) {
+            const flippedX = this.width - this.poseTracking.bodyPosition;
+            const targetX = flippedX - this.paddle.width / 2;
+            this.paddle.x = Math.max(0, Math.min(targetX, this.width - this.paddle.width));
+        } else {
+            if (this.keys['ArrowLeft'] || this.keys['a'] || this.keys['A']) {
+                this.paddle.dx = -this.paddle.speed;
+            }
+            if (this.keys['ArrowRight'] || this.keys['d'] || this.keys['D']) {
+                this.paddle.dx = this.paddle.speed;
+            }
+            
+            this.paddle.x += this.paddle.dx;
+            
+            if (this.paddle.x < 0) this.paddle.x = 0;
+            if (this.paddle.x + this.paddle.width > this.width) {
+                this.paddle.x = this.width - this.paddle.width;
+            }
         }
     }
     

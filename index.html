@@ -5,23 +5,29 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Matrix Breakout - Space Edition</title>
     <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
 </head>
 <body>
-    <div id="game-container">
-        <div id="hud">
-            <div id="score">Score: <span id="score-value">0</span></div>
-            <div id="level">Level: <span id="level-value">1</span></div>
-            <div id="lives">Lives: <span id="lives-value">3</span></div>
-        </div>
+    <div id="main-container">
+        <div id="game-container">
+            <div id="hud">
+                <div id="score">Score: <span id="score-value">0</span></div>
+                <div id="level">Level: <span id="level-value">1</span></div>
+                <div id="lives">Lives: <span id="lives-value">3</span></div>
+            </div>
+            
+            <canvas id="gameCanvas" width="800" height="600"></canvas>
+            <video id="webcam" style="display: none;" autoplay></video>
         
-        <canvas id="gameCanvas" width="800" height="600"></canvas>
-        
-        <div id="start-screen" class="screen">
+            <div id="start-screen" class="screen">
             <h1>MATRIX BREAKOUT</h1>
             <p>Space Edition</p>
             <button id="start-btn">START GAME</button>
             <div class="controls">
                 <p>Use LEFT/RIGHT arrows or A/D to move</p>
+                <p>Or use your BODY to control the paddle</p>
                 <p>SPACE to pause</p>
             </div>
         </div>
@@ -30,11 +36,30 @@
             <h1>GAME OVER</h1>
             <p>Final Score: <span id="final-score">0</span></p>
             <button id="restart-btn">RESTART</button>
+            <p>Or raise both arms up to restart with body tracking!</p>
         </div>
         
         <div id="pause-screen" class="screen hidden">
             <h1>PAUSED</h1>
             <p>Press SPACE to continue</p>
+        </div>
+        </div>
+        
+        <div id="camera-preview">
+            <div id="camera-container">
+                <h3>Camera Preview</h3>
+                <div id="camera-wrapper">
+                    <video id="camera-display" width="800" height="600" autoplay></video>
+                    <canvas id="landmarks-canvas" width="800" height="600"></canvas>
+                </div>
+                <div id="screen-overlay">
+                    <div id="hud-overlay">
+                        <div id="score-overlay">Score: <span id="score-value-overlay">0</span></div>
+                        <div id="level-overlay">Level: <span id="level-value-overlay">1</span></div>
+                        <div id="lives-overlay">Lives: <span id="lives-value-overlay">3</span></div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
     
