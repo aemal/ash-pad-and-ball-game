@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Matrix Breakout - Space Edition</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="game-container">
+        <div id="hud">
+            <div id="score">Score: <span id="score-value">0</span></div>
+            <div id="level">Level: <span id="level-value">1</span></div>
+            <div id="lives">Lives: <span id="lives-value">3</span></div>
+        </div>
+        
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        
+        <div id="start-screen" class="screen">
+            <h1>MATRIX BREAKOUT</h1>
+            <p>Space Edition</p>
+            <button id="start-btn">START GAME</button>
+            <div class="controls">
+                <p>Use LEFT/RIGHT arrows or A/D to move</p>
+                <p>SPACE to pause</p>
+            </div>
+        </div>
+        
+        <div id="game-over-screen" class="screen hidden">
+            <h1>GAME OVER</h1>
+            <p>Final Score: <span id="final-score">0</span></p>
+            <button id="restart-btn">RESTART</button>
+        </div>
+        
+        <div id="pause-screen" class="screen hidden">
+            <h1>PAUSED</h1>
+            <p>Press SPACE to continue</p>
+        </div>
+    </div>
+    
+    <script src="game.js"></script>
+</body>
+</html>
